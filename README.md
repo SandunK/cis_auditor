@@ -8,11 +8,12 @@ This project is to audit and remedy a system according to the benchmarks supplie
 ## Edit Benchmarks
 There are two configuration files in conf/ directory.       
   - audit.conf contains all the commands and their results that needs to do auditing       
-    > Note: Don't change the file structure. sections should be in []. After defining a section add audit commands line by line. After one empty line add respective results of the commands to audit. *IMPORTANT* Only use empty lines to seperate commands from there results        eg: [section 1]        
+    > Note: Don't change the file structure. sections should be in []. After defining a section add audit commands line by line. After one empty line add respective results of the commands to audit. *IMPORTANT* Only use empty lines to seperate commands from there results        
+    eg: [section 1]        
     command1        
     command2        
     command3        
-            
+    
     result1        
     result2        
     result3        
