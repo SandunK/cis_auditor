@@ -1,0 +1,2 @@
+ sudo pip install art==4.2
+ sudo pip install console-progressbar==1.1.2
