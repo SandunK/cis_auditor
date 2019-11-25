@@ -1,8 +1,15 @@
 import re
 import collections
 import subprocess
+import traceback
+
 from console_progressbar import ProgressBar
-import urllib2
+try:
+    # For Python 3.0 and later
+    from urllib.request import urlopen
+except ImportError:
+    # Fall back to Python 2's urllib2
+    from urllib2 import urlopen
 from datetime import datetime
 
 
@@ -13,6 +20,7 @@ class EvaluationLogic:
         global FAIL
         global ENDC
         global OKBLUE
+        global input_func
 
         OKGREEN = '\033[92m'  # Green color start
         WARNING = '\033[93m'  # Yellow color
@@ -20,13 +28,19 @@ class EvaluationLogic:
         OKBLUE = '\033[94m'  # Blue color
         ENDC = '\033[0m'  # End of colors
 
+        input_func = None
+        try:
+            input_func = raw_input
+        except NameError:
+            input_func = input
+
     def filePreConfigurator(self, filePath):
         sectionLst = []  # Benchmark sections
         commandLst = []  # All the commands and their output
         sectionIndexLst = []  # index of the sections in file
         ruleDictionary = collections.OrderedDict()  # ordered dictionary key = sections, value = commands for section
         try:
-            # confFile = urllib2.urlopen('https://raw.githubusercontent.com/SandunK/git-demo-160176A/master/section.conf')      # file open from remote server
+            # confFile = urlopen('https://raw.githubusercontent.com/SandunK/git-demo-160176A/master/section.conf')      # file open from remote server
             confFile = open(filePath, "r")
             content = confFile.read().strip().splitlines()
         except IOError:
@@ -78,7 +92,7 @@ class EvaluationLogic:
                 process = subprocess.Popen(commandLst[i], shell=True, stderr=subprocess.PIPE,
                                            stdout=subprocess.PIPE)
                 process = process.communicate()[0].strip()  # evaluate commands on system
-                print ''
+                print('')
                 # process = str(process).encode('utf-8').strip()
                 if i == len(commandLst) - 1:
                     pb.print_progress_bar(100)
@@ -88,15 +102,15 @@ class EvaluationLogic:
                     success += 1
 
             except subprocess.CalledProcessError as e:
-                print e.output
-                print "\n", FAIL + "Non Compliance" + ENDC
+                print(e.output)
+                print("\n", FAIL + "Non Compliance" + ENDC)
                 return "Non-Compliance"
 
         if success == len(commandsAndResults[0]):
-            print OKGREEN + "Compliance" + ENDC  # Check whether all the commands are executed without errors
+            print(OKGREEN + "Compliance" + ENDC)  # Check whether all the commands are executed without errors
             return "Compliance"
         else:
-            print FAIL + "Non Compliance" + ENDC
+            print(FAIL + "Non Compliance" + ENDC)
             return "Non-Compliance"
 
     def remedy(self, remediationDictionary, section):
@@ -113,27 +127,28 @@ class EvaluationLogic:
                         success += 1
                         if process.stderr:
                             for line in process.stderr:
-                                print (line)
+                                print(line)
                                 errorLog.write(str(
                                     datetime.utcnow()) + "UTC. Error occurred when remedying %s on %s command "
                                                          "with error \"%s\"\n" % (
-                                               section, commands[0][i], line.strip()))
+                                                   section, commands[0][i], line.strip()))
 
 
                     except subprocess.CalledProcessError as e:
-                        print FAIL + e.output + ENDC
-                        print "\n", FAIL + "Error occurred when remedying " + section + " on " + commands[0][
-                            i] + " command." + ENDC
+                        print(FAIL + e.output + ENDC)
+                        print(FAIL + "Error occurred when remedying " + section + " on " + commands[0][
+                            i] + " command." + ENDC)
                         errorLog.write(str(
                             datetime.utcnow()) + "UTC. Error occurred when remedying %s on %s command "
                                                  "with error \"%s\"\n" % (section, commands[0][i], e.output.strip()))
 
                 if success == len(commands):
-                    print OKGREEN + 'Remediation success' + ENDC  # check whether all the commands are executed
+                    print(OKGREEN + 'Remediation success' + ENDC)  # check whether all the commands are executed
                 else:
-                    print FAIL + 'Remediation failed. For more info check error.log file in project_directory/error.log' + ENDC
+                    print(
+                        FAIL + 'Remediation failed. For more info check error.log file in project_directory/error.log' + ENDC)
         if not remedyFlag:
-            print WARNING + "Remediation not available" + ENDC  # check whether remediation defined
+            print(WARNING + "Remediation not available" + ENDC)  # check whether remediation defined
         errorLog.close()
 
     def auditOrRemediate(self, isRemedy):
@@ -144,18 +159,18 @@ class EvaluationLogic:
             auditResultFile = open("Audit_result.txt", "w")  # file that records audit results
             auditResultFile.write("Audit started at " + str(datetime.utcnow()) + " on UTC time.\n \n")
             for section, commandsAndResults in ruleDictionary.items():  # loop through sections
-                print '\n', OKBLUE + section + ENDC
+                print(OKBLUE + section.strip() + ENDC)
                 validity = self.checkValidity(commandsAndResults)
                 auditResultFile.write("%s : %s\n" % (section, validity))
 
             auditResultFile.close()
 
         else:  # remediation
-            remedyAll = raw_input("Do you want to remedy all (Y/N/E) : ")
+            remedyAll = input_func("Do you want to remedy all (Y/N/E) : ")
             if remedyAll.lower() == "y":
                 remediationDictionary = self.filePreConfigurator("conf/remediation.conf")
                 for section, commandsAndResults in ruleDictionary.items():
-                    print '\n', OKBLUE + section + ENDC
+                    print(OKBLUE + section + ENDC)
                     validity = self.checkValidity(commandsAndResults)
                     if validity == "Non-Compliance":
                         self.remedy(remediationDictionary, section)
@@ -163,25 +178,24 @@ class EvaluationLogic:
             elif remedyAll.lower() == "n":
                 remediationDictionary = self.filePreConfigurator("conf/remediation.conf")
                 for section, commandsAndResults in ruleDictionary.items():
-                    print '\n', OKBLUE + section + ENDC
+                    print(OKBLUE + section + ENDC)
                     validity = self.checkValidity(commandsAndResults)
                     if validity == "Non-Compliance":
-                        needRemediation = raw_input(
-                            "Section is non compliance with benchmarks. Do you want a remediation " # prompt to user asking a remediation
+                        needRemediation = input_func(
+                            "Section is non compliance with benchmarks. Do you want a remediation "  # prompt to user asking a remediation
                             "(Y/N/E) : ")
                         if needRemediation.lower() == "y":
                             self.remedy(remediationDictionary, section)
                         elif needRemediation.lower() == "n":
-                            print (WARNING + "Remediation skipped !" + ENDC)
+                            print(WARNING + "Remediation skipped !" + ENDC)
                             continue
                         elif needRemediation.lower() == "e":
                             exit()
                         else:
-                            print (WARNING + "Invalid Input. Section remediation not applied !" + ENDC)
+                            print(WARNING + "Invalid Input. Section remediation not applied !" + ENDC)
 
             elif remedyAll.lower() == "e":
                 exit()
 
             else:
-                print (WARNING + "Invalid Input. Section remediation not applied !" + ENDC)
-
+                print(WARNING + "Invalid Input. Section remediation not applied !" + ENDC)
