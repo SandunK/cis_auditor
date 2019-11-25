@@ -3,7 +3,7 @@ This project is to audit and remedy a system according to the benchmarks supplie
 
 ## Setup
 - run configure.sh as root user ` path_to_file/configure.sh`
-- run cis_benchmarks.py
+- Follow the instructions
 
 ## Edit Benchmarks
 There are two configuration files in conf/ directory.       
