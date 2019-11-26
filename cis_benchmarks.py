@@ -1,15 +1,24 @@
 import traceback
-
-from art import *
+import subprocess
 from EvaluationLogic import *
 
-tprint("CIS Benchmark Auditor")
+
 input_func = None
 try:
     input_func = raw_input
 except NameError:
     input_func = input
 
+try:
+    from art import *
+    from console_progressbar import ProgressBar
+except Exception:
+    rc = subprocess.call("./configure.sh")
+    from art import *
+    from console_progressbar import ProgressBar
+
+
+tprint("CIS Benchmark Auditor")
 mode = input_func("Audit or Remediation (A/R/E) :")
 logic = EvaluationLogic()
 
