@@ -2,8 +2,9 @@ import re
 import collections
 import subprocess
 import traceback
-
+import shlex
 from console_progressbar import ProgressBar
+
 try:
     # For Python 3.0 and later
     from urllib.request import urlopen
@@ -30,10 +31,13 @@ class EvaluationLogic:
 
         input_func = None
         try:
+            # for python 2
             input_func = raw_input
         except NameError:
+            # for python 3
             input_func = input
 
+    # configure file data according to a pre defined structure
     def filePreConfigurator(self, filePath):
         sectionLst = []  # Benchmark sections
         commandLst = []  # All the commands and their output
@@ -80,31 +84,96 @@ class EvaluationLogic:
 
             return ruleDictionary
 
-    # Method to find the compliance of the system
-    def checkValidity(self, commandsAndResults):
+    # Method to find whether compliance or not
+    def checkValidity(self, commandsAndResults, section):
+        errorLog = open("logs/audit_error.log", "a")
         pb = ProgressBar(total=100, decimals=3, length=50, fill='#', zfill='-')
         success = 0
+
         for i in range(0, len(commandsAndResults[0])):
             commandLst = commandsAndResults[0]
             resultLst = commandsAndResults[1]
 
             try:
-                process = subprocess.Popen(commandLst[i], shell=True, stderr=subprocess.PIPE,
-                                           stdout=subprocess.PIPE)
-                process = process.communicate()[0].strip()  # evaluate commands on system
-                print('')
-                # process = str(process).encode('utf-8').strip()
-                if i == len(commandLst) - 1:
+                if i == len(commandLst) - 1:  # Print progressbar
                     pb.print_progress_bar(100)
                 else:
                     pb.print_progress_bar((100 / (len(commandLst))) * (i + 1))
-                if process == resultLst[i]:
-                    success += 1
+
+                process = subprocess.Popen(commandLst[i], shell=True, stderr=subprocess.PIPE,  # execute the command
+                                           stdout=subprocess.PIPE)
+
+                outContent = process.stdout.readlines()         # command output
+                errContent = process.stderr.readlines()         # command error output
+                process.wait()
+                if len(outContent)>0:
+                    out = outContent[-1]                        # if output exists get last line
+                else:
+                    out = ''
+                if len(errContent)>0:                           # if error exists get last line
+                    err = errContent[-1]
+                else:
+                    err = ''
+                errorState = process.poll()                     # get command error state
+                process.wait()
+
+                if resultLst[i].strip() == "errStderr":  # if definitely there should be any output
+                    if err:
+                        print(FAIL + "Non Compliance" + ENDC)
+                        return "Non-compliance"
+                    else:
+                        if errorState != 0:  # state of the last bash output 0= no error 1 = error
+                            print(FAIL + "Non Compliance" + ENDC)
+                            return "Non-compliance"
+                        else:
+                            success += 1
+
+                elif resultLst[i].strip() == "err":  # There should be any output. But errors will be errors
+                    if err:
+                        print(err)
+                        errorLog.write(str(
+                            datetime.utcnow()) + "UTC. Error occurred when auditing %s on %s command "
+                                                 "with error \"%s\"\n" % (
+                                           section, commandLst[i], err.strip()))
+                        print(FAIL + "Error" + ENDC)
+                        return "Error"
+                    else:
+                        if errorState != 0:  # state of the last bash output 0= no error 1 = error
+                            print(FAIL + "Non Compliance" + ENDC)
+                            return "Non-compliance"
+                        else:
+                            success += 1
+                else:
+                    # if process.stderr:
+                    if err:                 # output defined but error occurred
+                        print("\n" + err)
+                        errorLog.write(str(
+                            datetime.utcnow()) + "UTC. Error occurred when auditing %s on %s command "
+                                                 "with error \"%s\"\n" % (
+                                           section, commandLst[i], err.strip()))
+                        print(FAIL + "Error" + ENDC)
+                        return "Error"
+                    else:
+                        processStr = out.strip()
+                        print('')
+                        if processStr == resultLst[i]:  # compare the output with expected result
+                            success += 1
 
             except subprocess.CalledProcessError as e:
-                print(e.output)
-                print("\n", FAIL + "Non Compliance" + ENDC)
-                return "Non-Compliance"
+                print(FAIL + e.output + ENDC)
+                print(FAIL + "Error occurred when auditing " + section + " on " + commandLst[i][
+                    i] + " command." + ENDC)
+                errorLog.write(str(
+                    datetime.utcnow()) + "UTC. Error occurred when Auditing %s on %s command "
+                                         "with error \"%s\"\n" % (section, commandLst[i], e.output.strip()))
+                return "Error"
+            except IndexError:
+                print(FAIL + "Error occurred when auditing " + section + " on " + commandLst[i][
+                    i] + " command." + ENDC)
+                errorLog.write(str(
+                    datetime.utcnow()) + "UTC. Error occurred when Auditing %s on %s command "
+                                         "with error \"%s\"\n" % (section, commandLst[i], traceback.print_exc()))
+                return "Error"
 
         if success == len(commandsAndResults[0]):
             print(OKGREEN + "Compliance" + ENDC)  # Check whether all the commands are executed without errors
@@ -113,26 +182,28 @@ class EvaluationLogic:
             print(FAIL + "Non Compliance" + ENDC)
             return "Non-Compliance"
 
+    # Remedy a section
     def remedy(self, remediationDictionary, section):
-        errorLog = open("logs/error.log", "a")
-        remedyFlag = False
-        for remediationSection, commands in remediationDictionary.items():
+        errorLog = open("logs/remediation_error.log", "a")
+        remedyFlag = False  # flag to identify whether remediation available
+
+        for remediationSection, commands in remediationDictionary.items():  # loop through remediation
             if remediationSection == section:
                 remedyFlag = True
-                success = 0
+                success = 0  # number of success executions
                 for i in range(len(commands[0])):
                     try:
                         process = subprocess.Popen(commands[0][i], shell=True, stderr=subprocess.PIPE,
+                                                   # execute the commands
                                                    stdout=subprocess.PIPE)  # execute remediation commands
                         success += 1
-                        if process.stderr:
+                        if process.stderr:  # if error occurred
                             for line in process.stderr:
                                 print(line)
                                 errorLog.write(str(
                                     datetime.utcnow()) + "UTC. Error occurred when remedying %s on %s command "
                                                          "with error \"%s\"\n" % (
                                                    section, commands[0][i], line.strip()))
-
 
                     except subprocess.CalledProcessError as e:
                         print(FAIL + e.output + ENDC)
@@ -160,42 +231,32 @@ class EvaluationLogic:
             auditResultFile.write("Audit started at " + str(datetime.utcnow()) + " on UTC time.\n \n")
             for section, commandsAndResults in ruleDictionary.items():  # loop through sections
                 print(OKBLUE + section.strip() + ENDC)
-                validity = self.checkValidity(commandsAndResults)
+                validity = self.checkValidity(commandsAndResults, section)  # Check validity of the section
                 auditResultFile.write("%s : %s\n" % (section, validity))
 
             auditResultFile.close()
 
-        else:  # remediation
-            remedyAll = input_func("Do you want to remedy all (Y/N/E) : ")
-            if remedyAll.lower() == "y":
-                remediationDictionary = self.filePreConfigurator("conf/remediation.conf")
-                for section, commandsAndResults in ruleDictionary.items():
-                    print(OKBLUE + section + ENDC)
-                    validity = self.checkValidity(commandsAndResults)
-                    if validity == "Non-Compliance":
-                        self.remedy(remediationDictionary, section)
+        else:
+            remediationDictionary = self.filePreConfigurator(
+                "conf/remediation.conf")  # read commands to remedy each section
+            remedyAll = False  # flag to define remedy all or not
+            for section, commandsAndResults in ruleDictionary.items():
+                print(OKBLUE + section + ENDC)
+                validity = self.checkValidity(commandsAndResults, section)  # check validity of the section
 
-            elif remedyAll.lower() == "n":
-                remediationDictionary = self.filePreConfigurator("conf/remediation.conf")
-                for section, commandsAndResults in ruleDictionary.items():
-                    print(OKBLUE + section + ENDC)
-                    validity = self.checkValidity(commandsAndResults)
-                    if validity == "Non-Compliance":
+                if validity == "Non-Compliance":
+                    if remedyAll:
+                        self.remedy(remediationDictionary, section)  # remedy the section
+                    else:
                         needRemediation = input_func(
                             "Section is non compliance with benchmarks. Do you want a remediation "  # prompt to user asking a remediation
-                            "(Y/N/E) : ")
+                            "(Y/N/A) : ")
                         if needRemediation.lower() == "y":
                             self.remedy(remediationDictionary, section)
                         elif needRemediation.lower() == "n":
                             print(WARNING + "Remediation skipped !" + ENDC)
                             continue
-                        elif needRemediation.lower() == "e":
-                            exit()
+                        elif needRemediation.lower() == "a":
+                            remedyAll = True
                         else:
                             print(WARNING + "Invalid Input. Section remediation not applied !" + ENDC)
-
-            elif remedyAll.lower() == "e":
-                exit()
-
-            else:
-                print(WARNING + "Invalid Input. Section remediation not applied !" + ENDC)
